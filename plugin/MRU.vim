@@ -1,41 +1,58 @@
 " Author: Gergely Kontra <kgergely@mcl.hu>
-" Version: 0.2
-" Description:
+" Version: 0.3
 " Description:
 "   Most recently used files appear in the file menu
+"
+" FEEDBACK PLEASE
+"
 " Installation:
-"   Drop it into your plugin directory
-"   $MRU variable should contain the full filename, where the MRU files should
-"   be written
-"   MRU_num can contain the number of files to store (default is 4)
+" - Drop it into your plugin directory
+" - $MRU variable can contain the full filename, where the MRU files should
+"   be written. (If not specified, assumed location on UNIX is
+"   $HOME/.vimrecent and $VIM/_vimrecent on other systems.
+" - MRU_num variable can contain the number of files to store (default is 4)
+" - PATHSIZELIMIT variable can be used to limit the size of the path name
+"   appearing in the menu
+" - To define what to do, when you select a menu item, you can adjust
+"   OPEN_FUNC variable. It must contain a globally available function, which
+"   has one parameter: the file to be processed.
+"   The default is 'SpWhenModified'. You can change it to
+"   'SpWhenNamedOrModified', if you want (almost) always split windows, or,
+"   you can write your own function.
 "
 " History:
-"    0.1: * Initial release (not published)
-"    0.2: * You can access the files through your keyboard (1-9), when you are
-"           in the file menu
-"         * Bugfixes
-"         * When you click on an item, the function named OPEN_FUNC will be
-"           called, or it will be opened in a window (in the current window,
-"           when the file is not modified, or in a new window othervise)
+"    0.1:  * Initial release (not published)
+"    0.2:  * You can access the files through your keyboard (1-9), when you are
+"            in the file menu
+"          * Bugfixes
+"          * When you click on an item, the function named MRU_FUNCTION will be
+"            called, or it will be opened in a window (in the current window,
+"            when the file is not modified, or in a new window othervise)
+"    0.21: * You can adjust PATHSIZELIMIT to limit the path size appeared in
+"            the menu
+"          * OPEN_FUNC is now really OPEN_FUNC :)
+"          * Delete buffer, even when 'hidden' is set
+"            Thanks to Roger Pilkey for the bug report
+"    0.3: * Use clientserver feature to synchronize the menu instances
 "
 " TODO:
 "    Are all valid filenames escaped?
 "
 
 if !exists('SpWhenModified') "integration with FavMenu
-  fu! SpWhenModified(f)
+  fu! SpWhenModified(f) "splits only when curr buf is modified
     if &mod
       exe 'sp '.a:f
-    else
+    el
       exe 'e '.a:f
-    endif
+    en
   endf
-  fu! SpWhenNamedOrModified(f)
+  fu! SpWhenNamedOrModified(f) "splits, when curr buf has name, or is modified
     if bufname('')!='' || &mod
       exe 'sp '.a:f
-    else
+    el
       exe 'e '.a:f
-    end
+    en
   endf
   fu! OpenFile()
     if exists('g:OPEN_FUNC')
@@ -44,32 +61,50 @@ if !exists('SpWhenModified') "integration with FavMenu
       retu 'SpWhenModified'
     en
   endf
+  fu! TruncPath(path)
+    let p=a:path
+    let pathlen=strlen(p)
+    if exists('g:PATHSIZELIMIT') && pathlen>g:PATHSIZELIMIT
+      let cut=match(p,'[/\\]',pathlen-g:PATHSIZELIMIT)
+      if cut>0 && cut<pathlen
+	let p='\.\.\.'.strpart(p,cut)
+      en
+    en
+    retu p
+  endf
 end
 
-fu! <SID>AddThisFile(f)
-  if a:f!='//' && !buflisted(a:f)  " if param not good...
-    retu
-  end
-  sp $MRU|set nobl|1
+fu! <SID>SendAll(what)
+  exe 'cal '.a:what
+  if has('clientserver')
+    let servers=serverlist()
+    let pos=0
+    let re="[^\n]\\+"  "Thanx to Mark Hillebrand
+    wh match(servers,re,pos) != -1
+      let s=matchstr(servers,re,pos)
+      let pos=pos+strlen(s)+1
+      if v:servername!=s
+	cal remote_expr(s,a:what)
+      en
+    endw
+  en
+endf
+
+fu! MRUDestroy()
+  sv $MRU|set bh=delete
   " First cleanup old MRU's
   " !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
   " WARNING: Keep next 2 lines in sync with the :g below
   " !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-  g/^.\+$/silent! exe 'aun &File.'.
+  g/^.\+$/sil! exe 'aun &File.'.
     \'[&'.line('.').']\ '.
     \escape(fnamemodify(getline('.'),':p:t'),' \.')
   " Figure out fullname
-  let fullname=fnamemodify(a:f,':p')
-  if a:f!='//' " add this file to the top (if real file)
-    if search('^\V'.escape(fullname,'\').'\$','w')
-      move 0
-    else
-      exe 'norm ggO'.fullname."\<Esc>"
-    endif
-  endif
-  let num=1+(exists('g:MRU_num') ? g:MRU_num : 4)
-  silent! exe num.',$d _'
-  " Build up new files
+  q!
+endf
+
+fu! MRURefresh()
+  sv $MRU|set bh=delete
   " !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
   " WARNING: Keep next command in synx with the :g above
   " !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -77,22 +112,45 @@ fu! <SID>AddThisFile(f)
     \'[&'.line('.').']\ '.
     \escape(fnamemodify(getline('.'),':p:t'),' \.').
     \'<Tab>'.
-    \escape(fnamemodify(getline('.'),':p:h'),' \.').
+    \TruncPath(escape(fnamemodify(getline('.'),':p:h'),' \.')).
     \' :call <C-R>=OpenFile()<CR>("'.
     \escape(getline('.'),'\').'")<CR>'
-  let pm=&pm|let &pm=''|wq|let &pm=pm
+  q!
+endf
+
+fu! <SID>MRUAdd(f)
+  if a:f!='//' && !buflisted(a:f)  " if param not good...
+    retu
+  end
+
+  cal <SID>SendAll('MRUDestroy()')
+
+  if a:f!='//' " add this file to the top (if real file)
+    let fullname=fnamemodify(a:f,':p')
+    sp $MRU|set nobl bh=delete
+    if search('^\V'.escape(fullname,'\').'\$','w')
+      move 0
+    el
+      exe 'norm ggO'.fullname."\<Esc>"
+    en
+    let num=1+(exists('g:MRU_num') ? g:MRU_num : 4)
+    sil! exe num.',$d _'
+    let pm=&pm|let &pm=''|wq|let &pm=pm
+  en
+
+  cal <SID>SendAll('MRURefresh()')
 endf
 
 if !exists('$MRU')
   if has('unix')
     let $MRU=$HOME.'/.vimrecent'
-  else
+  el
     let $MRU=$VIM.'\_vimrecent'
-  end
-end
+  en
+en
 
-amenu 10.511 &File.-SepMRU- <Nop>
-silent call <SID>AddThisFile('//')
+am 10.511 &File.-SepMRU- <Nop>
+sil cal MRUDestroy()|sil cal MRURefresh()
 aug MRU
-au BufWritePre * silent call <SID>AddThisFile(@%)
+au BufWritePre * sil call <SID>MRUAdd(@%)
 aug END

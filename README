@@ -1,0 +1,6 @@
+This is a mirror of http://www.vim.org/scripts/script.php?script_id=194
+
+It stores data in the file called $MRU.
+See also vimscript#161
+
+Hint: If you want a lightweight solution, you can use marks 0..9

@@ -1,11 +1,11 @@
 " Author: Gergely Kontra <kgergely@mcl.hu>
-" Version: 0.3
+" Version: 0.31
 " Description:
 "   Most recently used files appear in the file menu
 "
 " FEEDBACK PLEASE
 "
-" Installation:
+" Installation: {{{
 " - Drop it into your plugin directory
 " - $MRU variable can contain the full filename, where the MRU files should
 "   be written. (If not specified, assumed location on UNIX is
@@ -19,8 +19,9 @@
 "   The default is 'SpWhenModified'. You can change it to
 "   'SpWhenNamedOrModified', if you want (almost) always split windows, or,
 "   you can write your own function.
+"   }}}
 "
-" History:
+" History: {{{
 "    0.1:  * Initial release (not published)
 "    0.2:  * You can access the files through your keyboard (1-9), when you are
 "            in the file menu
@@ -33,13 +34,14 @@
 "          * OPEN_FUNC is now really OPEN_FUNC :)
 "          * Delete buffer, even when 'hidden' is set
 "            Thanks to Roger Pilkey for the bug report
-"    0.3: * Use clientserver feature to synchronize the menu instances
-"
+"    0.3:  * Use clientserver feature to synchronize the menu instances
+"    0.31: * Shut up clientserver stuff
+" }}}
 " TODO:
 "    Are all valid filenames escaped?
 "
 
-if !exists('SpWhenModified') "integration with FavMenu
+if !exists('SpWhenModified') "integration with FavMenu {{{
   fu! SpWhenModified(f) "splits only when curr buf is modified
     if &mod
       exe 'sp '.a:f
@@ -72,9 +74,9 @@ if !exists('SpWhenModified') "integration with FavMenu
     en
     retu p
   endf
-end
+end "}}}
 
-fu! <SID>SendAll(what)
+fu! s:SendAll(what) "{{{
   exe 'cal '.a:what
   if has('clientserver')
     let servers=serverlist()
@@ -88,9 +90,9 @@ fu! <SID>SendAll(what)
       en
     endw
   en
-endf
+endf "}}}
 
-fu! MRUDestroy()
+fu! MRUDestroy() " must be global :( {{{
   sv $MRU|set bh=delete
   " First cleanup old MRU's
   " !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -101,9 +103,9 @@ fu! MRUDestroy()
     \escape(fnamemodify(getline('.'),':p:t'),' \.')
   " Figure out fullname
   q!
-endf
+endf "}}}
 
-fu! MRURefresh()
+fu! MRURefresh() " must be global :( {{{
   sv $MRU|set bh=delete
   " !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
   " WARNING: Keep next command in synx with the :g above
@@ -116,18 +118,24 @@ fu! MRURefresh()
     \' :call <C-R>=OpenFile()<CR>("'.
     \escape(getline('.'),'\').'")<CR>'
   q!
-endf
+endf "}}}
 
-fu! <SID>MRUAdd(f)
+fu! s:MRUAdd(f) "{{{
+  "let lz=&lz|se lz
   if a:f!='//' && !buflisted(a:f)  " if param not good...
     retu
   end
 
-  cal <SID>SendAll('MRUDestroy()')
+  sil! cal s:SendAll('MRUDestroy()')
 
   if a:f!='//' " add this file to the top (if real file)
     let fullname=fnamemodify(a:f,':p')
-    sp $MRU|set nobl bh=delete
+    let v=virtcol('.')|let l=line('.')
+    norm H
+    let hl=line('.')
+    vs $MRU
+    "let b=bufnr('%')|e! $MRU
+    setl nobl bh=delete ma
     if search('^\V'.escape(fullname,'\').'\$','w')
       move 0
     el
@@ -135,11 +143,16 @@ fu! <SID>MRUAdd(f)
     en
     let num=1+(exists('g:MRU_num') ? g:MRU_num : 4)
     sil! exe num.',$d _'
-    let pm=&pm|let &pm=''|wq|let &pm=pm
+    let pm=&pm|let &pm=''
+    wq
+    " w|exe 'b' b " syntax lost!
+    let &pm=pm
+    exe 'norm' hl.'Gzt'.l.'G'.v.'|'
   en
 
-  cal <SID>SendAll('MRURefresh()')
-endf
+  cal s:SendAll('MRURefresh()')
+  "let &lz=lz
+endf "}}}
 
 if !exists('$MRU')
   if has('unix')
@@ -151,6 +164,10 @@ en
 
 am 10.511 &File.-SepMRU- <Nop>
 sil cal MRUDestroy()|sil cal MRURefresh()
+
 aug MRU
-au BufWritePre * sil call <SID>MRUAdd(@%)
+  au!
+  au BufWritePost * sil! call <SID>MRUAdd(@%)
 aug END
+
+" vim:ft=vim:fdm=marker:

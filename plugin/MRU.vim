@@ -1,5 +1,5 @@
 " Author: Gergely Kontra <kgergely@mcl.hu>
-" Version: 0.31
+" Version: 0.32
 " Description:
 "   Most recently used files appear in the file menu
 "
@@ -36,6 +36,7 @@
 "            Thanks to Roger Pilkey for the bug report
 "    0.3:  * Use clientserver feature to synchronize the menu instances
 "    0.31: * Shut up clientserver stuff
+"    0.32: * Fixed filename escaping (Thx to Fritz Mehner for the patch)
 " }}}
 " TODO:
 "    Are all valid filenames escaped?
@@ -43,14 +44,15 @@
 
 if !exists('SpWhenModified') "integration with FavMenu {{{
   fu! SpWhenModified(f) "splits only when curr buf is modified
+		let fesc = escape( a:f, " %" )
     if &mod
-      exe 'sp '.a:f
+      exe 'sp '.fesc
     el
-      exe 'e '.a:f
+      exe 'e '.fesc
     en
   endf
   fu! SpWhenNamedOrModified(f) "splits, when curr buf has name, or is modified
-    if bufname('')!='' || &mod
+    if bufname('%')!='' || &mod
       exe 'sp '.a:f
     el
       exe 'e '.a:f
